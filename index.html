@@ -32,15 +32,21 @@
       font-size: 24px;
       color: #f5f5f5;
     }
-    button {
-      padding: 10px 15px;
+    input, button {
+      margin: 10px;
+      padding: 10px;
       font-size: 16px;
-      margin: 20px;
-      cursor: pointer;
+      border-radius: 5px;
+      border: none;
+    }
+    input {
+      width: 80%;
+      max-width: 400px;
+    }
+    button {
       background: #ff4081;
       color: white;
-      border: none;
-      border-radius: 5px;
+      cursor: pointer;
     }
     button:hover {
       background: #e91e63;
@@ -49,69 +55,104 @@
 </head>
 <body>
   <h1>Chapters Viewer</h1>
+  
+  <div>
+    <input type="text" id="baseUrl" placeholder="Enter base URL (e.g., https://example.com/)" required>
+    <input type="number" id="totalChapters" placeholder="Enter number of chapters/pages" required>
+    <button onclick="loadImages()">Load Images</button>
+  </div>
+  
   <button onclick="downloadPDF()">Download as PDF</button>
+
   <div class="container" id="imageContainer">
-    <h2>Loading Chapters...</h2>
+    <h2>Enter details and click 'Load Images'</h2>
   </div>
 
   <script>
-    const container = document.getElementById('imageContainer');
-    const baseUrl = 'https://cdn.cartoonporn.to/n/storage/images/500939/';
-    const totalChapters = 198;
     let imageElements = [];
 
-    // Clear initial message
-    container.innerHTML = '';
+    async function loadImages() {
+      const container = document.getElementById('imageContainer');
+      container.innerHTML = ''; // Clear previous images
+      imageElements = [];
 
-    function loadImages() {
-      let promises = [];
+      let baseUrl = document.getElementById('baseUrl').value.trim();
+      const totalChapters = parseInt(document.getElementById('totalChapters').value);
+      const formats = ["jpg", "jpeg", "png", "webp"];
 
-      for (let chapter = 1; chapter <= totalChapters; chapter++) {
-        let img = document.createElement('img');
-        img.src = `${baseUrl}${chapter}.jpg`; // Try .jpg first
-        img.alt = `Chapter ${chapter}`;
-        img.dataset.chapter = chapter;
-
-        let imgPromise = new Promise((resolve) => {
-          img.onload = () => resolve(img);
-          img.onerror = () => {
-            // Try .png if .jpg fails
-            img.src = `${baseUrl}${chapter}.png`;
-            img.onerror = () => {
-              console.warn(`Image not found: ${img.src}`);
-              resolve(null); // Resolve with null for missing images
-            };
-          };
-        });
-
-        container.appendChild(img);
-        imageElements.push(img);
-        promises.push(imgPromise);
-      }
-
-      return Promise.all(promises);
-    }
-
-    async function downloadPDF() {
-      const { jsPDF } = window.jspdf;
-      let pdf = new jsPDF('p', 'mm', 'a4');
-      let imgWidth = 210; // A4 width in mm
-      let pageHeight = 297; // A4 height in mm
-      let yPosition = 0;
-
-      console.log("Waiting for all images to load...");
-      let loadedImages = await loadImages();
-      loadedImages = loadedImages.filter(img => img !== null); // Remove nulls (failed images)
-
-      if (loadedImages.length === 0) {
-        alert("No images loaded. Please check the source.");
+      if (!baseUrl || isNaN(totalChapters) || totalChapters <= 0) {
+        alert("Please enter a valid URL and number of chapters/pages.");
         return;
       }
 
-      console.log(`All ${loadedImages.length} images loaded. Converting to PDF...`);
+      if (!baseUrl.endsWith('/')) {
+        baseUrl += '/';
+      }
 
-      for (let i = 0; i < loadedImages.length; i++) {
-        let img = loadedImages[i];
+      console.log("Starting image loading...");
+
+      let loadedImages = 0;
+
+      for (let chapter = 1; chapter <= totalChapters; chapter++) {
+        let img = document.createElement('img');
+        img.alt = `Chapter ${chapter}`;
+        
+        let found = false;
+
+        for (let format of formats) {
+          let testSrc = `${baseUrl}${chapter}.${format}`;
+          let exists = await checkImageExists(testSrc);
+          
+          if (exists) {
+            img.src = testSrc;
+            container.appendChild(img);
+            imageElements.push(img);
+            loadedImages++;
+            found = true;
+            console.log(`Loaded: ${testSrc}`);
+            break;
+          }
+        }
+
+        if (!found) {
+          let errorText = document.createElement('p');
+          errorText.style.color = 'red';
+          errorText.textContent = `Image not found: Chapter ${chapter}`;
+          container.appendChild(errorText);
+          console.error(`No valid format found for Chapter ${chapter}`);
+        }
+      }
+
+      if (loadedImages === 0) {
+        alert("No images were loaded. Please check your URL.");
+      }
+    }
+
+    function checkImageExists(url) {
+      return new Promise((resolve) => {
+        let img = new Image();
+        img.src = url;
+        img.onload = () => resolve(true);
+        img.onerror = () => resolve(false);
+      });
+    }
+
+    async function downloadPDF() {
+      if (imageElements.length === 0) {
+        alert("No images loaded. Please load images first.");
+        return;
+      }
+
+      const { jsPDF } = window.jspdf;
+      let pdf = new jsPDF('p', 'mm', 'a4');
+      let imgWidth = 210;
+      let pageHeight = 297;
+      let yPosition = 0;
+
+      console.log(`Processing ${imageElements.length} images...`);
+
+      for (let i = 0; i < imageElements.length; i++) {
+        let img = imageElements[i];
 
         let canvas = await html2canvas(img, { scale: 2 });
         let imgData = canvas.toDataURL('image/jpeg');
@@ -126,30 +167,8 @@
         yPosition += imgHeight;
       }
 
-      console.log("PDF Generated. Preparing download...");
-
-      // **Mobile-Friendly Force Download Fix**
-      let pdfBlob = pdf.output('blob');
-      let pdfURL = URL.createObjectURL(pdfBlob);
-
-      if (navigator.userAgent.match(/Android|iPhone|iPad|iPod/i)) {
-        // **For Mobile Devices**
-        let openWindow = window.open(pdfURL, '_blank');
-        if (!openWindow) {
-          alert("Pop-up blocked! Click the button again or enable pop-ups.");
-        }
-      } else {
-        // **For Desktop (Regular Download)**
-        let downloadLink = document.createElement('a');
-        downloadLink.href = pdfURL;
-        downloadLink.download = "Chapters.pdf";
-        document.body.appendChild(downloadLink);
-        downloadLink.click();
-        document.body.removeChild(downloadLink);
-        URL.revokeObjectURL(pdfURL);
-      }
-      
-      console.log("Download triggered.");
+      pdf.save("Chapters.pdf");
+      console.log("PDF Downloaded.");
     }
   </script>
 </body>
