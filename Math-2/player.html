@@ -1,0 +1,50 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Lecture Player</title>
+    <link rel="stylesheet" href="styles.css">
+</head>
+<body>
+
+    <div id="player-container">
+        <h2 id="lecture-title"></h2>
+        <iframe id="lecture-frame" frameborder="0"></iframe>
+        
+        <div class="player-buttons">
+            <button id="fullscreen-btn" class="btn">⛶ Fullscreen</button>
+            <a id="notes-btn" class="btn" target="_blank">📄 Open Notes</a>
+            <a id="dpp-btn" class="btn" target="_blank">📝 Open DPP</a>
+        </div>
+    </div>
+
+    <script>
+        function getQueryParam(param) {
+            const urlParams = new URLSearchParams(window.location.search);
+            return urlParams.get(param);
+        }
+
+        document.getElementById("lecture-title").textContent = `${getQueryParam("subject")} - ${getQueryParam("unit")} - ${getQueryParam("lecture")}`;
+        document.getElementById("lecture-frame").src = getQueryParam("video");
+        document.getElementById("notes-btn").href = getQueryParam("notes");
+        document.getElementById("dpp-btn").href = getQueryParam("dpp");
+
+        // Fullscreen functionality
+        document.getElementById("fullscreen-btn").addEventListener("click", () => {
+            const iframe = document.getElementById("lecture-frame");
+
+            if (iframe.requestFullscreen) {
+                iframe.requestFullscreen();
+            } else if (iframe.mozRequestFullScreen) { // Firefox
+                iframe.mozRequestFullScreen();
+            } else if (iframe.webkitRequestFullscreen) { // Chrome, Safari, Opera
+                iframe.webkitRequestFullscreen();
+            } else if (iframe.msRequestFullscreen) { // IE/Edge
+                iframe.msRequestFullscreen();
+            }
+        });
+    </script>
+
+</body>
+</html>
