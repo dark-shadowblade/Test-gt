@@ -1,80 +1,98 @@
-async function fetchVideoLink() {
-    try {
-        const urlParams = new URLSearchParams(window.location.search);
-        const lectureLink = urlParams.get("link");
+document.addEventListener("DOMContentLoaded", function () {
+    const contentDiv = document.getElementById("content");
 
-        if (!lectureLink) {
-            console.error("Lecture link missing in URL parameters.");
-            document.getElementById("path-link").textContent = "Error: Lecture link missing.";
-            return;
-        }
-
-        console.log("Fetching video page:", lectureLink);
-
-        const response = await fetch(lectureLink);
-        if (!response.ok) throw new Error(`Failed to fetch: ${response.statusText}`);
-
-        const htmlText = await response.text();
-        console.log("Fetched HTML successfully");
-
-        // Parse HTML to extract script content
-        const parser = new DOMParser();
-        const doc = parser.parseFromString(htmlText, "text/html");
-        const scriptTags = doc.querySelectorAll("script");
-
-        let publinkDataScript = "";
-        scriptTags.forEach((script) => {
-            if (script.textContent.includes("publinkData")) {
-                publinkDataScript = script.textContent;
-            }
-        });
-
-        if (!publinkDataScript) throw new Error("publinkData script not found in fetched page.");
-
-        // Extract publinkData object
-        const dataMatch = publinkDataScript.match(/var publinkData = ({.*?});/s);
-        if (!dataMatch || !dataMatch[1]) throw new Error("Could not find publinkData JSON object.");
-
-        const publinkData = JSON.parse(dataMatch[1]);
-
-        if (!publinkData.variants || !publinkData.variants[0] || !publinkData.variants[0].path) {
-            throw new Error("Video path missing in publinkData.");
-        }
-
-        const fullVideoLink = "https://p-def6.pcloud.com" + publinkData.variants[0].path;
-        console.log("Final video link:", fullVideoLink);
-
-        // Update iframe with the correct video link
-        const iframeContainer = document.getElementById("iframe-container");
-        iframeContainer.innerHTML = "";
-        
-        const iframe = document.createElement("iframe");
-        iframe.src = fullVideoLink;
-        iframe.style.width = "100%";
-        iframe.style.height = "500px";
-        iframe.allowFullscreen = true;
-        iframeContainer.appendChild(iframe);
-
-        // Show control buttons
-        document.getElementById("fullscreen-btn").style.display = "inline-block";
-        document.getElementById("notes-btn").style.display = "inline-block";
-        document.getElementById("dpp-btn").style.display = "inline-block";
-
-        // Fullscreen functionality
-        document.getElementById("fullscreen-btn").addEventListener("click", () => {
-            if (iframe.requestFullscreen) {
-                iframe.requestFullscreen();
-            } else if (iframe.mozRequestFullScreen) {
-                iframe.mozRequestFullScreen();
-            } else if (iframe.webkitRequestFullscreen) {
-                iframe.webkitRequestFullscreen();
-            } else if (iframe.msRequestFullscreen) {
-                iframe.msRequestFullscreen();
-            }
-        });
-
-    } catch (error) {
-        console.error("Error:", error.message);
-        document.getElementById("path-link").textContent = "Error: " + error.message;
+    if (!contentDiv) {
+        console.error("Error: #content div not found in HTML!");
+        return;
     }
-}
+
+    if (typeof subjectsData === "undefined") {
+        console.error("Error: subjectsData is not defined! Make sure data.js is loaded.");
+        return;
+    }
+
+    async function fetchPCloudLink(baseLink) {
+        try {
+            const response = await fetch(baseLink);
+            if (!response.ok) throw new Error("Failed to fetch HTML content");
+
+            const htmlText = await response.text();
+            const parser = new DOMParser();
+            const doc = parser.parseFromString(htmlText, "text/html");
+
+            const scriptTags = doc.querySelectorAll("script");
+            let publinkDataScript = "";
+
+            scriptTags.forEach(script => {
+                if (script.textContent.includes("publinkData")) {
+                    publinkDataScript = script.textContent;
+                }
+            });
+
+            if (publinkDataScript) {
+                const dataMatch = publinkDataScript.match(/var publinkData = ({.*?});/s);
+                if (dataMatch && dataMatch[1]) {
+                    const publinkData = JSON.parse(dataMatch[1]);
+                    if (publinkData?.variants?.[0]?.path) {
+                        return "https://p-def6.pcloud.com" + publinkData.variants[0].path;
+                    }
+                }
+            }
+            throw new Error("pCloud link not found");
+        } catch (error) {
+            console.error("Error fetching pCloud link:", error);
+            return null;
+        }
+    }
+
+    async function fetchAndDisplayLectures() {
+        for (const subject of subjectsData) {
+            for (const unit of subject.units) {
+                const unitDiv = document.createElement("div");
+                unitDiv.classList.add("unit");
+
+                const unitHeader = document.createElement("h2");
+                unitHeader.textContent = unit.name;
+                unitDiv.appendChild(unitHeader);
+
+                const unitContent = document.createElement("div");
+                unitContent.classList.add("unit-content");
+
+                // 🔹 Fetch all lecture links in parallel
+                const lecturePromises = unit.lectures.map(fetchPCloudLink);
+                const pCloudLinks = await Promise.all(lecturePromises);
+
+                unit.lectures.forEach((lecture, index) => {
+                    const lectureDPPDiv = document.createElement("div");
+                    lectureDPPDiv.classList.add("lecture-dpp");
+
+                    const pCloudLink = pCloudLinks[index]; // Get link from fetched results
+                    const notesLink = unit.notes ? encodeURIComponent(unit.notes) : "";
+                    const dppLink = unit.dpps[index] ? encodeURIComponent(unit.dpps[index]) : "";
+
+                    if (pCloudLink) {
+                        lectureDPPDiv.innerHTML = `
+                            <a href="player.html?subject=${encodeURIComponent(subject.subject)}&unit=${encodeURIComponent(unit.name)}&lecture=${encodeURIComponent('Lecture ' + (index + 1))}&video=${encodeURIComponent(pCloudLink)}&notes=${notesLink}&dpp=${dppLink}" target="_blank">
+                                Lecture ${index + 1}
+                            </a>
+                            <a href="${unit.dpps[index]}" target="_blank">DPP ${index + 1}</a>
+                        `;
+                    } else {
+                        lectureDPPDiv.innerHTML = `<span>Lecture ${index + 1} (Unavailable)</span>`;
+                    }
+
+                    unitContent.appendChild(lectureDPPDiv);
+                });
+
+                unitDiv.appendChild(unitContent);
+                contentDiv.appendChild(unitDiv);
+
+                unitHeader.addEventListener("click", () => {
+                    unitContent.style.display = unitContent.style.display === "none" ? "block" : "none";
+                });
+            }
+        }
+    }
+
+    fetchAndDisplayLectures();
+});
